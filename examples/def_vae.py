@@ -17,7 +17,7 @@ from langvae.trainers import CyclicalScheduleKLThresholdTrainer, CyclicalSchedul
 from langvae.trainers.training_callbacks import TensorBoardCallback
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODE = "train_chkp"
+MODE = "train"
 
 CONFIG = {
     "encoder": "bert-base-cased",
@@ -33,12 +33,14 @@ CONFIG = {
     # "decoder": "microsoft/phi-4",
     "latent_size": 128,
     "max_sent_len": 32,
-    "ds_prefix": "wkt_wn_eb",
-    "num_epochs": 20,
-    "batch_size": 10 if (MODE == "dev") else 200,
-    "lr": 1e-3,
+    "ds_prefix": "wkt_wn_eb",   
+    "num_epochs": 50,
+    "batch_size": 10 if (MODE == "dev") else 50,
+    "lr": 0.001,
     "start_beta": 1.0,
-    "max_beta": 1.0
+    "max_beta": 1.0,
+    "target_kl": 2.0,
+    "n_cycles": 40
 }
 
 torch.set_float32_matmul_precision('high')
@@ -123,8 +125,8 @@ def main(config: dict):
         scheduler_params={"patience": 5, "factor": 0.5},
         start_beta=config["start_beta"],
         max_beta=config["max_beta"],
-        n_cycles=int(config["num_epochs"] * 0.8),
-        target_kl=2.0,
+        n_cycles=config["n_cycles"],
+        target_kl=config["target_kl"],
         # keep_best_on_train=True
     )
 
