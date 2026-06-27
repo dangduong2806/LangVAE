@@ -197,7 +197,10 @@ class SentenceDecoder(BaseDecoder):
             # else:
             gen_ids = generated[:, max(0, i):i+1, :].argmax(dim=-1)
             # embeds = self.decoder.get_input_embeddings()(gen_ids)  # + ctx_embed
-            past_dec = DynamicCache.from_legacy_cache(past_dec)
+            if hasattr(DynamicCache, "from_legacy_cache"):
+                past_dec = DynamicCache.from_legacy_cache(past_dec)
+            else:
+                past_dec = DynamicCache(ddp_cache_data=past_dec)
             decoded = self.decoder(input_ids=gen_ids, use_cache=True, past_key_values=past_dec)
 
             dec_pkv = _extract_pkv(decoded.past_key_values)
