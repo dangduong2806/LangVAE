@@ -15,6 +15,14 @@ FLASH_ATTN_SUPPORTED = [
 ]
 
 
+def _extract_pkv(pkv):
+    if hasattr(pkv, 'key_cache'):
+        return [ (pkv.key_cache[i], pkv.value_cache[i]) for i in range(len(pkv.key_cache)) ]
+    elif hasattr(pkv, 'layers'):
+        return [ (layer.keys, layer.values) for layer in pkv.layers ]
+    else:
+        return [ (layer[0], layer[1]) for layer in pkv ]
+
 class SentenceDecoder(BaseDecoder):
     """
     Decoder class for generating sentences from latent representations.
@@ -55,12 +63,9 @@ class SentenceDecoder(BaseDecoder):
 
         dec_ids = torch.unsqueeze(torch.tensor([self.tokenizer.pad_token_id] * 2, dtype=torch.int64, device=self.device), dim=-1)
         pkv = self.decoder(dec_ids, use_cache=True).past_key_values
-        if hasattr(pkv, 'key_cache'):
-            self.pkv_dims = pkv.key_cache[0].shape[1:]
-            self.pkv_dtype = pkv.key_cache[0].dtype
-        else:
-            self.pkv_dims = pkv[0][0].shape[1:]
-            self.pkv_dtype = pkv[0][0].dtype
+        pkv_list = _extract_pkv(pkv)
+        self.pkv_dims = pkv_list[0][0].shape[1:]
+        self.pkv_dtype = pkv_list[0][0].dtype
 
         self.context_hidden = nn.ModuleList([
             nn.LazyLinear(
@@ -195,38 +200,22 @@ class SentenceDecoder(BaseDecoder):
             past_dec = DynamicCache.from_legacy_cache(past_dec)
             decoded = self.decoder(input_ids=gen_ids, use_cache=True, past_key_values=past_dec)
 
-            if hasattr(decoded.past_key_values, 'key_cache'):
-                past_dec = [
-                    (
-                        torch.cat([
-                            decoded.past_key_values.key_cache[layer_idx][:, :, :-2, :],
-                            ctx_mem[layer_idx][0][:, :, i+1:i+2, :],
-                            decoded.past_key_values.key_cache[layer_idx][:, :, -1:, :]
-                        ], dim=-2),
-                        torch.cat([
-                            decoded.past_key_values.value_cache[layer_idx][:, :, :-2, :],
-                            ctx_mem[layer_idx][1][:, :, i+1:i+2, :],
-                            decoded.past_key_values.value_cache[layer_idx][:, :, -1:, :]
-                        ], dim=-2),
-                    )
-                    for layer_idx in range(self.decoder.config.num_hidden_layers)
-                ]
-            else:
-                past_dec = [
-                    (
-                        torch.cat([
-                            decoded.past_key_values[layer_idx][0][:, :, :-2, :],
-                            ctx_mem[layer_idx][0][:, :, i+1:i+2, :],
-                            decoded.past_key_values[layer_idx][0][:, :, -1:, :]
-                        ], dim=-2),
-                        torch.cat([
-                            decoded.past_key_values[layer_idx][1][:, :, :-2, :],
-                            ctx_mem[layer_idx][1][:, :, i+1:i+2, :],
-                            decoded.past_key_values[layer_idx][1][:, :, -1:, :]
-                        ], dim=-2),
-                    )
-                    for layer_idx in range(self.decoder.config.num_hidden_layers)
-                ]
+            dec_pkv = _extract_pkv(decoded.past_key_values)
+            past_dec = [
+                (
+                    torch.cat([
+                        dec_pkv[layer_idx][0][:, :, :-2, :],
+                        ctx_mem[layer_idx][0][:, :, i+1:i+2, :],
+                        dec_pkv[layer_idx][0][:, :, -1:, :]
+                    ], dim=-2),
+                    torch.cat([
+                        dec_pkv[layer_idx][1][:, :, :-2, :],
+                        ctx_mem[layer_idx][1][:, :, i+1:i+2, :],
+                        dec_pkv[layer_idx][1][:, :, -1:, :]
+                    ], dim=-2),
+                )
+                for layer_idx in range(self.decoder.config.num_hidden_layers)
+            ]
 
             generated[:, i+1, :] = F.softmax(decoded.logits[:, -1, :], dim=-1)
 
