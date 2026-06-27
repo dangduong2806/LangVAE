@@ -33,7 +33,7 @@ CONFIG = {
     # "decoder": "microsoft/phi-4",
     "latent_size": 128,
     "max_sent_len": 32,
-    "ds_prefix": "wkt_wn_eb",   
+    "ds_prefix": "eb",   
     "num_epochs": 50,
     "batch_size": 10 if (MODE == "dev") else 50,
     "lr": 0.001,
@@ -51,27 +51,34 @@ def exclude_sentence(sent: Union[Sentence, str]):
 
 
 def main(config: dict):
+    import random
     if (MODE == "dev"):
-        datasets = [WordNetFilteredDataSet()[:1000],]
+        eb_dataset = EntailmentBankDataSet.from_resource("pos+lemma+ctag+dep+srl#expl_only-noreps")
+        eb_data = list(eb_dataset.data)[:1000]
+        train_data_raw = eb_data[:800]
+        eval_data_raw = eb_data[800:900]
+        test_data_raw = eb_data[900:]
     else:
-        datasets = list()
         seed(0)
-        if ("wkt" in config["ds_prefix"]):
-            wkt_dataset = WiktionaryDefinitionCorpus.from_resource("pos+lemma+ctag+dep+dsr")
-            wkt_dataset = [sent for sent in wkt_dataset if not exclude_sentence(sent)]
-            shuffle(wkt_dataset)
-            datasets.append(wkt_dataset)
-        if ("wn" in config["ds_prefix"]):
-            wn_dataset = WordNetFilteredDataSet()
-            shuffle(wn_dataset.data)
-            datasets.append(wn_dataset)
-        if ("eb" in config["ds_prefix"]):
-            eb_dataset = EntailmentBankDataSet.from_resource("pos+lemma+ctag+dep+srl#expl_only-noreps")
-            shuffle(eb_dataset.data)
-            datasets.append(eb_dataset)
+        # Only load EntailmentBank dataset
+        eb_dataset = EntailmentBankDataSet.from_resource("pos+lemma+ctag+dep+srl#expl_only-noreps")
+        eb_data = list(eb_dataset.data)
+        random.seed(0)
+        random.shuffle(eb_data)
 
-    # eval_size = int(0.05 * len(dataset))
-    eval_size = [int(0.01 * len(ds)) for ds in datasets]
+        # 99% train, 1% validation
+        eval_size = max(1, int(0.01 * len(eb_data)))
+        train_data_raw = eb_data[:-eval_size]
+        eval_data_raw = eb_data[-eval_size:]
+
+        # Test dataset: 2000 random samples (mostly from validation + small part from training)
+        num_test_from_eval = min(len(eval_data_raw), 1900)  # Take up to 1900 from validation
+        num_test_from_train = min(len(train_data_raw), 2000 - num_test_from_eval)
+        
+        test_data_raw = random.sample(eval_data_raw, num_test_from_eval) + \
+                        random.sample(train_data_raw, num_test_from_train)
+        random.shuffle(test_data_raw)
+
     latent_size = config["latent_size"]
     max_sent_len = config["max_sent_len"]
     ds_prefix = config["ds_prefix"]
@@ -80,14 +87,17 @@ def main(config: dict):
     # decoder = SentenceDecoder("princeton-nlp/Sheared-LLaMA-2.7B", LATENT_SIZE, MAX_SENT_LEN, device=DEVICE,
     #                           load_in_4bit=True, device_map="auto")
     encoder = SentenceEncoder(config["encoder"], latent_size, decoder.tokenizer, caching=True, device=DEVICE)
-    train_dataset = TokenizedDataSet(sorted(chain(*[datasets[i][:-eval_size[i]] for i in range(len(datasets))]),
-                                            key=lambda x: len(x.surface), reverse=True),
+    
+    decoder_safe_name = config['decoder'].replace('/', '__')
+    train_dataset = TokenizedDataSet(sorted(train_data_raw, key=lambda x: len(x.surface), reverse=True),
                                      decoder.tokenizer, decoder.max_len, caching=True,
-                                     cache_persistence=f"{ds_prefix}_train_tok-{config['decoder']}_cache.jsonl")
-    eval_dataset = TokenizedDataSet(sorted(chain(*[datasets[i][-eval_size[i]:] for i in range(len(datasets))]),
-                                           key=lambda x: len(x.surface), reverse=True),
+                                     cache_persistence=f"{ds_prefix}_train_tok-{decoder_safe_name}_cache.jsonl")
+    eval_dataset = TokenizedDataSet(sorted(eval_data_raw, key=lambda x: len(x.surface), reverse=True),
                                     decoder.tokenizer, decoder.max_len, caching=True,
-                                    cache_persistence=f"{ds_prefix}_eval_tok-{config['decoder']}_cache.jsonl")
+                                    cache_persistence=f"{ds_prefix}_eval_tok-{decoder_safe_name}_cache.jsonl")
+    test_dataset = TokenizedDataSet(sorted(test_data_raw, key=lambda x: len(x.surface), reverse=True),
+                                    decoder.tokenizer, decoder.max_len, caching=True,
+                                    cache_persistence=f"{ds_prefix}_test_tok-{decoder_safe_name}_cache.jsonl")
 
     encoder.debug = True
     decoder.debug = True
