@@ -54,7 +54,7 @@ def main(config: dict):
     import random
     if (MODE == "dev"):
         eb_dataset = EntailmentBankDataSet.from_resource("pos+lemma+ctag+dep+srl#expl_only-noreps")
-        eb_data = list(eb_dataset.data)[:1000]
+        eb_data = list(eb_dataset)[:1000]
         train_data_raw = eb_data[:800]
         eval_data_raw = eb_data[800:900]
         test_data_raw = eb_data[900:]
@@ -62,7 +62,7 @@ def main(config: dict):
         seed(0)
         # Only load EntailmentBank dataset
         eb_dataset = EntailmentBankDataSet.from_resource("pos+lemma+ctag+dep+srl#expl_only-noreps")
-        eb_data = list(eb_dataset.data)
+        eb_data = list(eb_dataset)
         random.seed(0)
         random.shuffle(eb_data)
 
