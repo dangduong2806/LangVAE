@@ -19,35 +19,40 @@ def main():
     model.encoder.to(device)
     model.decoder.to(device)
     
-    sentences = [
-        "A planet is an astronomical body orbiting a star or stellar remnant.",
-        "The quick brown fox jumps over the lazy dog."
-    ]
-    
-    print("\n--- Encoding and Decoding Demo ---")
+    print("\n--- Interactive Encoding and Decoding Demo ---")
+    print("Type 'quit' or 'exit' to stop.")
     tokenizer = model.decoder.tokenizer
     
-    # Tokenize input sentences using the decoder's tokenizer
-    tokens = tokenizer(sentences, padding=True, truncation=True, return_tensors="pt")
-    input_ids = tokens["input_ids"].to(device)
-    
-    # 1. Encode sentences into the latent space (z)
-    print("Encoding sentences into latent space...")
-    with torch.no_grad():
-        z, cvars_emb = model.encode_z(input_ids)
-        
-    print(f"Latent representation shape: {z.shape}")
-    
-    # 2. Decode the latent representations back into sentences
-    print("Decoding latent representations...")
-    with torch.no_grad():
-        reconstructed = model.decode_sentences(z, cvars_emb)
-        
-    print("\nResults:")
-    for orig, recon in zip(sentences, reconstructed):
-        print(f"Original     : {orig}")
-        print(f"Reconstructed: {recon}")
-        print("-" * 50)
+    while True:
+        try:
+            user_input = input("\nEnter a sentence to reconstruct: ")
+            if user_input.strip().lower() in ['quit', 'exit']:
+                break
+            if not user_input.strip():
+                continue
+                
+            sentences = [user_input]
+            
+            # Tokenize input sentences using the decoder's tokenizer
+            tokens = tokenizer(sentences, padding=True, truncation=True, return_tensors="pt")
+            input_ids = tokens["input_ids"].to(device)
+            
+            # 1. Encode sentences into the latent space (z)
+            with torch.no_grad():
+                z, cvars_emb = model.encode_z(input_ids)
+                
+            # 2. Decode the latent representations back into sentences
+            with torch.no_grad():
+                reconstructed = model.decode_sentences(z, cvars_emb)
+                
+            print(f"\nOriginal     : {sentences[0]}")
+            print(f"Reconstructed: {reconstructed[0]}")
+            print("-" * 50)
+            
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"Error: {e}")
 
 if __name__ == "__main__":
     main()
